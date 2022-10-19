@@ -502,12 +502,7 @@ class Url_Extractor {
 				$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
 			}
 			
-			// FIXME: This is broken for offline I think (duplicating file name)?
-			$prevurl = $url;
 			$url = $this->convert_url( $url );
-			if (preg_match('/rest_media/', $prevurl)) {
-				Util::debug_log("HERE: $prevurl :after_convert: $url");
-			}
 		}
 
 		return $url;
