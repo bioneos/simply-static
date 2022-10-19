@@ -445,17 +445,6 @@ class Url_Extractor {
 		return $updated_extracted_url;
 	}
 
-	/* DOCU */
-	public function get_random_string($digits) {
-		$total_characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-		$randomString = '';
-		for ($i = 0; $i < $digits; $i++) {
-			$index = rand(0, strlen($total_characters) - 1);
-			$randomString .= $total_characters[$index];
-		}
-		return $randomString;
-	}
-
 	/**
 	 * Add a URL to the extracted URLs array and convert to absolute/relative/offline
 	 *
@@ -498,7 +487,7 @@ class Url_Extractor {
 
 				$rest_media_identifier = $this->rest_urls[$url];
 				if (empty($rest_media_identifier)) {
-					$rest_media_identifier = $this->get_random_string(10);
+					$rest_media_identifier = Util::get_random_string(10);
 					$this->rest_urls[$url] = "$rest_media_identifier-$original_file";
 				}
 
@@ -507,14 +496,18 @@ class Url_Extractor {
 				$this->extracted_urls[] = $url;
 				// Adjust the document to point to our target generated filename
 				// (does not exist on the server, created locally ONLY by the UrlFetcher) 
-				$url = Util::remove_params_and_fragment( $url ) . "rest_media/$rest_media_identifier-$original_file";
+				$url = Util::remove_params_and_fragment( $url ) . "rest_media/$rest_media_identifier";
 			}
 			else {
 				$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
 			}
 			
 			// FIXME: This is broken for offline I think (duplicating file name)?
+			$prevurl = $url;
 			$url = $this->convert_url( $url );
+			if (preg_match('/rest_media/', $prevurl)) {
+				Util::debug_log("HERE: $prevurl :after_convert: $url");
+			}
 		}
 
 		return $url;
