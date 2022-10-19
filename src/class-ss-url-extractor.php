@@ -487,8 +487,8 @@ class Url_Extractor {
 
 				$rest_media_identifier = $this->rest_urls[$url];
 				if (empty($rest_media_identifier)) {
-					$rest_media_identifier = Util::get_random_string(10);
-					$this->rest_urls[$url] = "$rest_media_identifier-$original_file";
+					$rest_media_identifier = Util::get_random_string(10) . "-$original_file";
+					$this->rest_urls[$url] = $rest_media_identifier;
 				}
 
 				// NOTE: We store the original url (with query string) in the extracted list
