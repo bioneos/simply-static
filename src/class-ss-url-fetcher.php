@@ -152,6 +152,10 @@ class Url_Fetcher {
 	 * @return string|null                The relative file path of the file
 	 */
 	public function create_directories_for_static_page( $static_page ) {
+$fp = fopen('/tmp/log2', 'a');
+// CHECK: see if the pre-seeded filename got transferred here
+fwrite($fp, $static_page->file_path . "\t" . $static_page->content_type . "\t" . $static_page->url . "\n");
+fclose($fp);
 		$url_parts = parse_url( $static_page->url );
 		// a domain with no trailing slash has no path, so we're giving it one
 		$path = isset( $url_parts['path'] ) ? $url_parts['path'] : '/';
@@ -183,6 +187,18 @@ class Url_Fetcher {
 			}
 		}
 
+		// FIXME: actually above here we should set the url to the absolute URL and let processing continue as normal
+		// TODO: Handle REST media to alternatively set $relative_file_dir here
+		if (stripos($static_page->file_path, "rest_media") === 0)
+		{
+			// FIXME (better extension determination):
+			if ($static_page->content_type === "image/jpeg") $path_info['extension'] = ".jpg";
+			$path_info['extension'] = "";
+			$relative_file_dir = "rest_media/";
+			$path_info['filename'] = substr($static_page->file_path, 11);
+		}
+
+		// Create parent directories
 		$create_dir = wp_mkdir_p( $this->archive_dir . urldecode( $relative_file_dir ) );
 		if ( $create_dir === false ) {
 			Util::debug_log( "Unable to create temporary directory: " . $this->archive_dir . urldecode( $relative_file_dir ) );

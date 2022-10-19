@@ -127,12 +127,23 @@ class Fetch_Urls_Task extends Task {
 			// Fetch all URLs from the page and add them to the queue...
 			$extractor = new Url_Extractor( $static_page );
 			$urls = $extractor->extract_and_update_urls();
+			// TODO: save the REST media map from extractor
+			$rest_media_map = $extractor->rest_urls;
+if (sizeof($rest_media_map) > 0) {
+$fp = fopen('/tmp/log', 'a');
+fwrite($fp, $static_page->url . ":\n");
+foreach ($rest_media_map as $url => $identifier)
+	fwrite($fp, $identifier . "\t" . $url . "\n");
+fwrite($fp, "---\n");
+fclose($fp);
+}
 		}
 
 		if ( $follow_urls ) {
 			Util::debug_log( "Adding " . sizeof( $urls ) . " URLs to the queue" );
 			foreach ( $urls as $url ) {
-				$this->set_url_found_on( $static_page, $url );
+				// TODO: pass the REST media map to pre-seed the filename of the static page
+				$this->set_url_found_on( $static_page, $url, $rest_media_map[$url] );
 			}
 		} else {
 			Util::debug_log( "Not following URLs from this page" );
@@ -272,15 +283,22 @@ class Fetch_Urls_Task extends Task {
 	 * for which page it was found on if the ID isn't yet set or if the record
 	 * hasn't been updated in this instance of static generation yet.
 	 *
-	 * @param Simply_Static\Page $static_page The record for the parent page.
-	 * @param string             $child_url   The URL of the child page.
-	 * @param string             $start_time  Static generation start time.
+	 * @param Simply_Static\Page $static_page     The record for the parent page.
+	 * @param string             $child_url       The URL of the child page.
+	 * @param string             $rest_identifier The generated REST media identifier for this URL (optional).
 	 * @return void
 	 */
-	public function set_url_found_on( $static_page, $child_url ) {
+	public function set_url_found_on( $static_page, $child_url, $rest_identifier = null ) {
 		$child_static_page = Page::query()->find_or_create_by( 'url' , $child_url );
 		if ( $child_static_page->found_on_id === null || $child_static_page->updated_at < $this->archive_start_time ) {
 			$child_static_page->found_on_id = $static_page->id;
+
+			// Pre-populate the file path, if this is REST media
+			// NOTE: The file extension will need to be determined later, after fetch
+			//   so that we can choose it based on the content type.
+			if (!empty($rest_identifier))
+				$child_static_page->file_path = "rest_media/$rest_identifier";
+			
 			$child_static_page->save();
 		}
 	}
