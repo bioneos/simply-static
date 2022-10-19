@@ -113,6 +113,12 @@ class Url_Extractor {
 	public $extracted_urls = array();
 
 	/**
+	 * The mapping of REST media asset URLs to their randomly generated identifier.
+	 * @var array
+	 */
+	public $rest_urls = array();
+
+	/**
 	 * Constructor
 	 *
 	 * @param string $static_page Simply_Static\Page to extract URLs from
@@ -260,7 +266,6 @@ class Url_Extractor {
 				$tag->$attribute_name = $attribute_value;
 			}
 		}
-
 	}
 
 	/**
@@ -460,8 +465,43 @@ class Url_Extractor {
 
 		if ( $url && Util::is_local_url( $url ) ) {
 			// add to extracted urls queue
-			$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
+			//$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
 
+			// Identify and handle REST media (dynamic assets based on query parameters)
+			// TODO: Need a better way to recognize if this is a REST url or not
+			if ( preg_match('/\?brizy_media=/', $url) ) {
+				// TODO: The decoding for this might actually be related to the format of the srcset attribute
+				//   Look into this and perform the decoding earlier if needed
+				$url = html_entity_decode($url);
+
+				// Parse the Query parameters to attempt to find the original filename
+				$query_params = array();
+				parse_str(parse_url($url, PHP_URL_QUERY), $query_params);
+				// TODO: need a universal way to define the original filename, or a better fallback...
+				// NOTE: This doesn't always help us find an appropriate file extension for these files.
+				//   Unfortunately we will have to introduce a data extension in that case to ensure
+				//   the UrlFetcher code doesn't adjust our path (adding "." as a suffix)
+				$original_file=$query_params['brizy_media'];
+				if (empty(pathinfo($original_file, PATHINFO_EXTENSION)))
+					$original_file .= ".dat";
+
+				$rest_media_identifier = $this->rest_urls[$url];
+				if (empty($rest_media_identifier)) {
+					$rest_media_identifier = Util::get_random_string(10) . "-$original_file";
+					$this->rest_urls[$url] = $rest_media_identifier;
+				}
+
+				// NOTE: We store the original url (with query string) in the extracted list
+				//   or else the REST media will not be obtained from the UrlFetcher...
+				$this->extracted_urls[] = $url;
+				// Adjust the document to point to our target generated filename
+				// (does not exist on the server, created locally ONLY by the UrlFetcher) 
+				$url = Util::remove_params_and_fragment( $url ) . "rest_media/$rest_media_identifier";
+			}
+			else {
+				$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
+			}
+			
 			$url = $this->convert_url( $url );
 		}
 

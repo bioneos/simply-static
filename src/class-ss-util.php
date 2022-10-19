@@ -481,4 +481,22 @@ class Util {
 		);
 		return esc_url_raw( $url );
 	}
+
+
+	/**
+	 * Generate a random string of alphanumerics (specified length as a parameter)
+	 *
+	 * @param int $length The target length for the string.
+	 * @return string
+	 */
+	public function get_random_string($length) {
+		$total_characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+		$randomString = '';
+		for ($i = 0; $i < $length; $i++) {
+			$index = rand(0, strlen($total_characters) - 1);
+			$randomString .= $total_characters[$index];
+		}
+		return $randomString;
+	}
+
 }
