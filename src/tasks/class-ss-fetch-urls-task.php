@@ -127,22 +127,15 @@ class Fetch_Urls_Task extends Task {
 			// Fetch all URLs from the page and add them to the queue...
 			$extractor = new Url_Extractor( $static_page );
 			$urls = $extractor->extract_and_update_urls();
-			// TODO: save the REST media map from extractor
+			// Save the REST media map from extractor
 			$rest_media_map = $extractor->rest_urls;
-if (sizeof($rest_media_map) > 0) {
-$fp = fopen('/tmp/log', 'a');
-fwrite($fp, $static_page->url . ":\n");
-foreach ($rest_media_map as $url => $identifier)
-	fwrite($fp, $identifier . "\t" . $url . "\n");
-fwrite($fp, "---\n");
-fclose($fp);
-}
 		}
 
 		if ( $follow_urls ) {
 			Util::debug_log( "Adding " . sizeof( $urls ) . " URLs to the queue" );
 			foreach ( $urls as $url ) {
-				// TODO: pass the REST media map to pre-seed the filename of the static page
+				// Pass the REST media identifier (if present) to pre-load the filename of target asset
+				// NOTE: This gets stored in the Page->file_path until the UrlFetcher uses it.
 				$this->set_url_found_on( $static_page, $url, $rest_media_map[$url] );
 			}
 		} else {

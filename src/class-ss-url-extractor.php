@@ -485,14 +485,22 @@ class Url_Extractor {
 				//   Look into this and perform the decoding earlier if needed
 				$url = html_entity_decode($url);
 
+				// Parse the Query parameters to attempt to find the original filename
+				$query_params = array();
+				parse_str(parse_url($url, PHP_URL_QUERY), $query_params);
+				// TODO: need a universal way to define the original filename, or a better fallback...
+				// NOTE: This doesn't always help us find an appropriate file extension for these files.
+				//   Unfortunately we will have to introduce a data extension in that case to ensure
+				//   the UrlFetcher code doesn't adjust our path (adding "." as a suffix)
+				$original_file=$query_params['brizy_media'];
+				if (empty(pathinfo($original_file, PATHINFO_EXTENSION)))
+					$original_file .= ".dat";
+
 				$rest_media_identifier = $this->rest_urls[$url];
 				if (empty($rest_media_identifier)) {
 					$rest_media_identifier = $this->get_random_string(10);
-					$this->rest_urls[$url] = $rest_media_identifier;
+					$this->rest_urls[$url] = "$rest_media_identifier-$original_file";
 				}
-
-				// TODO: Parse the Query parameters to attempt to find the original filename
-				$original_file="";
 
 				// NOTE: We store the original url (with query string) in the extracted list
 				//   or else the REST media will not be obtained from the UrlFetcher...
@@ -505,6 +513,7 @@ class Url_Extractor {
 				$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
 			}
 			
+			// FIXME: This is broken for offline I think (duplicating file name)?
 			$url = $this->convert_url( $url );
 		}
 

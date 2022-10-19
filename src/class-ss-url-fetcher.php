@@ -152,13 +152,17 @@ class Url_Fetcher {
 	 * @return string|null                The relative file path of the file
 	 */
 	public function create_directories_for_static_page( $static_page ) {
-$fp = fopen('/tmp/log2', 'a');
-// CHECK: see if the pre-seeded filename got transferred here
-fwrite($fp, $static_page->file_path . "\t" . $static_page->content_type . "\t" . $static_page->url . "\n");
-fclose($fp);
+		// Standard asset
 		$url_parts = parse_url( $static_page->url );
 		// a domain with no trailing slash has no path, so we're giving it one
 		$path = isset( $url_parts['path'] ) ? $url_parts['path'] : '/';
+
+		// REST asset
+		if (str_starts_with($static_page->file_path, "rest_media")) {
+			Util::debug_log( "Creating directories / filename for rest_media content (" . $static_page->file_path . ")" );
+			$path = "/" . $static_page->file_path;
+		}
+
 
 		$origin_path_length = strlen( parse_url( Util::origin_url(), PHP_URL_PATH ) );
 		if ( $origin_path_length > 1 ) { // prevents removal of '/'
