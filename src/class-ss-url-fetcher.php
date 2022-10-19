@@ -191,17 +191,6 @@ class Url_Fetcher {
 			}
 		}
 
-		// FIXME: actually above here we should set the url to the absolute URL and let processing continue as normal
-		// TODO: Handle REST media to alternatively set $relative_file_dir here
-		if (stripos($static_page->file_path, "rest_media") === 0)
-		{
-			// FIXME (better extension determination):
-			if ($static_page->content_type === "image/jpeg") $path_info['extension'] = ".jpg";
-			$path_info['extension'] = "";
-			$relative_file_dir = "rest_media/";
-			$path_info['filename'] = substr($static_page->file_path, 11);
-		}
-
 		// Create parent directories
 		$create_dir = wp_mkdir_p( $this->archive_dir . urldecode( $relative_file_dir ) );
 		if ( $create_dir === false ) {
