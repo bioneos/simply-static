@@ -29,7 +29,7 @@ class Fetch_Urls_Task extends Task {
 	 * @return boolean|WP_Error true if done, false if not done, WP_Error if error.
 	 */
 	public function perform() {
-		$batch_size = apply_filters( 'simply_static_fetch_urls_batch_size', 500 );
+		$batch_size = apply_filters( 'simply_static_fetch_urls_batch_size', 50 );
 
 		$static_pages = apply_filters(
 			'ss_static_pages',
@@ -55,6 +55,7 @@ class Fetch_Urls_Task extends Task {
 
 		while ( $static_page = array_shift( $static_pages ) ) {
 			Util::debug_log( "URL: " . $static_page->url );
+			$this->save_pages_status( count($static_pages)+1, intval($total_pages));
 
 			$excludable = $this->find_excludable( $static_page );
 			if ( $excludable !== false ) {
