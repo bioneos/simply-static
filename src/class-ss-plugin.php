@@ -15,7 +15,7 @@ class Plugin {
 	 * Plugin version
 	 * @var string
 	 */
-	const VERSION = '2.1.9';
+	const VERSION = '2.3.2';
 
 	/**
 	 * The slug of the plugin; used in actions, filters, i18n, table names, etc.
@@ -37,13 +37,13 @@ class Plugin {
 
 	/**
 	 * View object
-	 * @var Simply_Static\View
+	 * @var \Simply_Static\View
 	 */
 	protected $view = null;
 
 	/**
 	 * Archive creation process
-	 * @var Simply_Static\Archive_Creation_Job
+	 * @var \Simply_Static\Archive_Creation_Job
 	 */
 	protected $archive_creation_job = null;
 
@@ -52,6 +52,11 @@ class Plugin {
 	 * @var string
 	 */
 	protected $current_page = '';
+
+	/**
+	 * @var null|\Simply_Static\Page_Handlers
+	 */
+	protected $page_handlers = null;
 
 	/**
 	 * Disable usage of "new"
@@ -94,6 +99,9 @@ class Plugin {
 			// Add admin info links.
 			add_action( 'simply_static_admin_info_links', array( self::$instance, 'add_info_links' ) );
 
+			// Maybe clear local directory.
+			add_action( 'ss_after_setup_task', array( self::$instance, 'maybe_clear_directory' ) );
+
 			// Handle AJAX requests
 			add_action( 'wp_ajax_static_archive_action', array( self::$instance, 'static_archive_action' ) );
 			add_action( 'wp_ajax_render_export_log', array( self::$instance, 'render_export_log' ) );
@@ -111,9 +119,16 @@ class Plugin {
 
 			add_filter( 'http_request_args', array( self::$instance, 'add_http_filters' ), 10, 2 );
 
+			// Disable WP lazy loading for more fail-safe crawling.
+			add_filter( 'wp_lazy_loading_enabled', '__return_false' );
+
+			$integrations = new Integrations();
+			$integrations->load();
+
 			self::$instance->options              = Options::instance();
 			self::$instance->view                 = new View();
 			self::$instance->archive_creation_job = new Archive_Creation_Job();
+			self::$instance->page_handlers        = new Page_Handlers();
 
 			$page                         = isset( $_GET['page'] ) ? $_GET['page'] : '';
 			self::$instance->current_page = $page;
@@ -159,9 +174,11 @@ class Plugin {
 		require_once $path . 'src/tasks/class-ss-setup-task.php';
 		require_once $path . 'src/tasks/class-ss-fetch-urls-task.php';
 		require_once $path . 'src/tasks/class-ss-transfer-files-locally-task.php';
+		require_once $path . 'src/tasks/class-ss-simply-cdn-task.php';
 		require_once $path . 'src/tasks/class-ss-create-zip-archive.php';
 		require_once $path . 'src/tasks/class-ss-wrapup-task.php';
 		require_once $path . 'src/tasks/class-ss-cancel-task.php';
+		require_once $path . 'src/handlers/class-ss-page-handler.php';
 		require_once $path . 'src/class-ss-query.php';
 		require_once $path . 'src/models/class-ss-model.php';
 		require_once $path . 'src/models/class-ss-page.php';
@@ -169,6 +186,8 @@ class Plugin {
 		require_once $path . 'src/class-ss-sql-permissions.php';
 		require_once $path . 'src/class-ss-upgrade-handler.php';
 		require_once $path . 'src/class-ss-util.php';
+		require_once $path . 'src/class-page-handlers.php';
+		require_once $path . 'src/class-integrations.php';
 	}
 
 	/**
@@ -188,6 +207,14 @@ class Plugin {
 		// Plugin admin JS. Tack on plugin version.
 		if ( $this->current_page === 'simply-static' ) {
 			wp_enqueue_script( self::SLUG . '-generate-styles', plugin_dir_url( dirname( __FILE__ ) ) . 'js/admin-generate.js', array(), self::VERSION );
+			wp_localize_script(
+				self::SLUG . '-generate-styles',
+				'ss_generate',
+				[
+					'is_network_admin' => is_network_admin() ? '1' : '0',
+					'is_cron'          => Util::is_cron() ? '1' : '0'
+				]
+			);
 		}
 
 		if ( $this->current_page === 'simply-static_settings' ) {
@@ -201,11 +228,15 @@ class Plugin {
 	 */
 	public function add_plugin_admin_menu() {
 
+		if ( apply_filters( 'ss_hide_admin_menu', false ) ) {
+			return;
+		}
+
 		// Add main menu item
 		add_menu_page(
 			__( 'Simply Static', 'simply-static' ),
 			__( 'Simply Static', 'simply-static' ),
-			'edit_posts',
+			apply_filters( 'ss_settings_capability', 'edit_posts' ),
 			self::SLUG,
 			array( self::$instance, 'display_generate_page' ),
 			'dashicons-text-page'
@@ -215,7 +246,7 @@ class Plugin {
 			self::SLUG,
 			__( 'Generate Static Site', 'simply-static' ),
 			__( 'Generate', 'simply-static' ),
-			'edit_posts',
+			apply_filters( 'ss_settings_capability', 'edit_posts' ),
 			self::SLUG,
 			array( self::$instance, 'display_generate_page' )
 		);
@@ -224,7 +255,7 @@ class Plugin {
 			self::SLUG,
 			__( 'Simply Static Settings', 'simply-static' ),
 			__( 'Settings', 'simply-static' ),
-			'manage_options',
+			apply_filters( 'ss_settings_capability', 'manage_options' ),
 			self::SLUG . '_settings',
 			array( self::$instance, 'display_settings_page' )
 		);
@@ -233,7 +264,7 @@ class Plugin {
 			self::SLUG,
 			__( 'Simply Static Diagnostics', 'simply-static' ),
 			__( 'Diagnostics', 'simply-static' ),
-			'manage_options',
+			apply_filters( 'ss_settings_capability', 'manage_options' ),
 			self::SLUG . '_diagnostics',
 			array( self::$instance, 'display_diagnostics_page' )
 		);
@@ -244,9 +275,12 @@ class Plugin {
 	 *
 	 * @return void
 	 */
-	public function run_static_export() {
-		do_action( 'ss_before_static_export' );
-		$this->archive_creation_job->start();
+	public function run_static_export( $blog_id = 0 ) {
+		if ( ! $blog_id ) {
+			$blog_id = get_current_blog_id();
+		}
+		do_action( 'ss_before_static_export', $blog_id );
+		$this->archive_creation_job->start( $blog_id );
 	}
 
 
@@ -261,25 +295,24 @@ class Plugin {
 			die( __( 'Not permitted', 'simply-static' ) );
 		}
 
-		$action = $_POST['perform'];
+		$action  = $_POST['perform'];
+		$blog_id = isset( $_POST['blog_id'] ) ? absint( $_POST['blog_id'] ) : get_current_blog_id();
+
+		do_action( 'ss_before_perform_archive_action', $blog_id, $action, $this->archive_creation_job );
 
 		if ( $action === 'start' ) {
 			Util::delete_debug_log();
 			Util::debug_log( "Received request to start generating a static archive" );
 
-			if ( 'on' === $this->options->get( 'use_cron' ) && ! defined( 'DISABLE_WP_CRON' ) || 'on' === $this->options->get( 'use_cron' ) && defined( 'SS_CRON' ) ) {
-				if ( ! wp_next_scheduled( 'simply_static_site_export_cron' ) ) {
-					wp_schedule_single_event( time(), 'simply_static_site_export_cron' );
-				}
-			} else {
-				// Cron is unavaiable.
-				do_action( 'ss_before_static_export' );
-				$this->archive_creation_job->start();
-			}
+			do_action( 'ss_before_static_export', $blog_id );
+			$this->archive_creation_job->start( $blog_id );
 		} elseif ( $action === 'cancel' ) {
 			Util::debug_log( "Received request to cancel static archive generation" );
 			$this->archive_creation_job->cancel();
 		}
+
+		do_action( 'ss_after_perform_archive_action', $blog_id, $action, $this->archive_creation_job );
+
 
 		$this->send_json_response_for_static_archive( $action );
 	}
@@ -296,6 +329,8 @@ class Plugin {
 			->set_template( '_activity_log' )
 			->assign( 'status_messages', $this->options->get( 'archive_status_messages' ) )
 			->render_to_string();
+
+		do_action( 'ss_before_sending_response_for_static_archive' );
 
 		// send json response and die()
 		wp_send_json( array(
@@ -316,12 +351,19 @@ class Plugin {
 			die( __( 'Not permitted', 'simply-static' ) );
 		}
 
+		$blog_id = isset( $_POST['blog_id'] ) ? absint( $_POST['blog_id'] ) : get_current_blog_id();
+
+		do_action( 'ss_before_render_activity_log', $blog_id );
+
 		// $archive_manager = new Archive_Manager();
 
 		$content = $this->view
 			->set_template( '_activity_log' )
 			->assign( 'status_messages', $this->options->get( 'archive_status_messages' ) )
 			->render_to_string();
+
+		do_action( 'ss_after_render_activity_log', $blog_id );
+
 
 		// send json response and die()
 		wp_send_json( array(
@@ -338,6 +380,10 @@ class Plugin {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			die( __( 'Not permitted', 'simply-static' ) );
 		}
+
+		$blog_id = isset( $_POST['blog_id'] ) ? absint( $_POST['blog_id'] ) : get_current_blog_id();
+
+		do_action( 'ss_before_render_export_log', $blog_id );
 
 		$per_page     = $_POST['per_page'];
 		$current_page = $_POST['page'];
@@ -365,10 +411,20 @@ class Plugin {
 			->assign( 'total_static_pages', $total_static_pages )
 			->render_to_string();
 
+		do_action( 'ss_after_render_export_log' );
+
+
 		// send json response and die()
 		wp_send_json( array(
 			'html' => $content
 		) );
+	}
+
+	/**
+	 * @return Archive_Creation_Job|null
+	 */
+	public function get_archive_creation_job() {
+		return $this->archive_creation_job;
 	}
 
 	/**
@@ -381,8 +437,11 @@ class Plugin {
 		$this->view
 			->set_layout( 'admin' )
 			->set_template( 'generate' )
-			->assign( 'archive_generation_done', $done )
-			->render();
+			->assign( 'archive_generation_done', $done );
+
+		do_action( 'ss_before_render_generate_page', $this->view, $this->options );
+
+		$this->view->render();
 	}
 
 	/**
@@ -410,11 +469,11 @@ class Plugin {
 			->assign( 'delivery_method', $this->options->get( 'delivery_method' ) )
 			->assign( 'local_dir', $this->options->get( 'local_dir' ) )
 			->assign( 'destination_url_type', $this->options->get( 'destination_url_type' ) )
-			->assign( 'use_cron', $this->options->get( 'use_cron' ) )
 			->assign( 'force_replace_url', $this->options->get( 'force_replace_url' ) )
 			->assign( 'clear_directory_before_export', $this->options->get( 'clear_directory_before_export' ) )
 			->assign( 'relative_path', $this->options->get( 'relative_path' ) )
 			->assign( 'http_basic_auth_digest', $this->options->get( 'http_basic_auth_digest' ) )
+			->assign( 'allow_subsites', $this->options->get( 'allow_subsites' ) )
 			->render();
 	}
 
@@ -428,16 +487,8 @@ class Plugin {
 		// Set destination url type / scheme / host
 		$destination_url_type = $this->fetch_post_value( 'destination_url_type' );
 
-		if ( $destination_url_type == 'offline' ) {
-			$destination_scheme = '';
-			$destination_host   = '.';
-		} else if ( $destination_url_type == 'relative' ) {
-			$destination_scheme = '';
-			$destination_host   = '';
-		} else {
-			$destination_scheme = $this->fetch_post_value( 'destination_scheme' );
-			$destination_host   = untrailingslashit( $this->fetch_post_value( 'destination_host' ) );
-		}
+		$destination_scheme = $this->fetch_post_value( 'destination_scheme' );
+		$destination_host   = untrailingslashit( $this->fetch_post_value( 'destination_host' ) );
 
 		// Set URLs to exclude
 		$urls_to_exclude = array();
@@ -509,13 +560,17 @@ class Plugin {
 				'local_dir'                     => Util::trailingslashit_unless_blank( $this->fetch_post_value( 'local_dir' ) ),
 				'destination_url_type'          => $destination_url_type,
 				'relative_path'                 => $relative_path,
-				'use_cron'                      => $this->fetch_post_value( 'use_cron' ),
 				'force_replace_url'             => $this->fetch_post_value( 'force_replace_url' ),
 				'clear_directory_before_export' => $this->fetch_post_value( 'clear_directory_before_export' ),
 			)
 		);
 
+		if ( is_network_admin() ) {
+			$options['allow_subsites'] = $this->fetch_post_value( 'allow_subsites' );
+		}
+
 		foreach ( $options as $key => $value ) {
+			$value = $this->sanitize_option( $key, $value );
 			$this->options->set( $key, $value );
 		}
 
@@ -523,6 +578,26 @@ class Plugin {
 
 		$message = __( 'Your changes have been saved.', 'simply-static' );
 		$this->view->add_flash( 'updated', $message );
+	}
+
+	/**
+	 * Sanitize Option
+	 *
+	 * @param string $key Option key.
+	 * @param mixed $value Option value.
+	 *
+	 * @return mixed
+	 */
+	public function sanitize_option( $key, $value ) {
+		switch ( $key ) {
+			case 'additional_urls':
+			case 'additional_files':
+				$value = str_replace( '"', '', $value );
+				$value = str_replace( "'", '', $value );
+				break;
+		}
+
+		return $value;
 	}
 
 	/**
@@ -807,6 +882,8 @@ class Plugin {
 			array_push( $task_list, 'create_zip_archive' );
 		} else if ( $delivery_method === 'local' ) {
 			array_push( $task_list, 'transfer_files_locally' );
+		} else if ( $delivery_method === 'simply-cdn' ) {
+			array_push( $task_list, 'simply_cdn' );
 		}
 		array_push( $task_list, 'wrapup' );
 
@@ -837,10 +914,31 @@ class Plugin {
 	public function add_info_links( $info_text ) {
 		ob_start();
 		?>
-        <a href="https://patrickposner.dev/docs/simply-static/" target="_blank">Documentation</a>
-        <a href="https://patrickposner.dev/plugins/simply-static" target="_blank">Simply Static Pro</a>
+        <a class="button button-secondary" href="https://simplycdn.io" target="_blank">Simply CDN</a>
+        <a class="button button-secondary" href="https://patrickposner.dev/plugins/simply-static" target="_blank">Simply
+            Static Pro</a>
 		<?php
 		$info_text = apply_filters( 'simply_static_info_links', ob_get_clean() );
 		echo $info_text;
+	}
+
+	/**
+	 * Maybe clear local directory before export.
+	 *
+	 * @return void
+	 */
+	public function maybe_clear_directory() {
+		// Clear out the local directory before copying files.
+		if ( 'on' === $this->options->get( 'clear_directory_before_export' ) && 'local' === $this->options->get( 'delivery_method' ) ) {
+			$local_dir = apply_filters( 'ss_local_dir', $this->options->get( 'local_dir' ) );
+
+			// Make sure the directory exists and is not empty.
+			$iterator = new \FilesystemIterator( $local_dir );
+
+			if ( is_dir( $local_dir ) && $iterator->valid() ) {
+				Transfer_Files_Locally_Task::delete_local_directory_static_files( $local_dir, $this->options );
+			}
+		}
+
 	}
 }

@@ -1,4 +1,5 @@
 <?php
+
 namespace Simply_Static;
 
 /**
@@ -34,17 +35,17 @@ class Fetch_Urls_Task extends Task {
 		$static_pages = apply_filters(
 			'ss_static_pages',
 			Page::query()
-			->where( 'last_checked_at < ? OR last_checked_at IS NULL', $this->archive_start_time )
-			->limit( $batch_size )
-			->find(),
+			    ->where( 'last_checked_at < ? OR last_checked_at IS NULL', $this->archive_start_time )
+			    ->limit( $batch_size )
+			    ->find(),
 			$this->archive_start_time
 		);
 
 		$pages_remaining = apply_filters(
 			'ss_remaining_pages',
 			Page::query()
-			->where( 'last_checked_at < ? OR last_checked_at IS NULL', $this->archive_start_time )
-			->count(),
+			    ->where( 'last_checked_at < ? OR last_checked_at IS NULL', $this->archive_start_time )
+			    ->count(),
 			$this->archive_start_time
 		);
 
@@ -55,15 +56,15 @@ class Fetch_Urls_Task extends Task {
 
 		while ( $static_page = array_shift( $static_pages ) ) {
 			Util::debug_log( "URL: " . $static_page->url );
-			$this->save_pages_status( count($static_pages)+1, intval($total_pages));
+			$this->save_pages_status( count( $static_pages ) + 1, intval( $total_pages ) );
 
-			$excludable = $this->find_excludable( $static_page );
+			$excludable = apply_filters( 'ss_find_excludable', $this->find_excludable( $static_page ), $static_page );
 			if ( $excludable !== false ) {
-				$save_file = $excludable['do_not_save'] !== '1';
+				$save_file   = $excludable['do_not_save'] !== '1';
 				$follow_urls = $excludable['do_not_follow'] !== '1';
-				Util::debug_log( "Excludable found: URL: " . $excludable['url'] . ' DNS: ' . $excludable['do_not_save'] . ' DNF: ' .$excludable['do_not_follow'] );
+				Util::debug_log( "Excludable found: URL: " . $excludable['url'] . ' DNS: ' . $excludable['do_not_save'] . ' DNF: ' . $excludable['do_not_follow'] );
 			} else {
-				$save_file = true;
+				$save_file   = true;
 				$follow_urls = true;
 				Util::debug_log( "URL is not being excluded" );
 			}
@@ -84,6 +85,15 @@ class Fetch_Urls_Task extends Task {
 				continue;
 			}
 
+            // Not found? It's maybe a redirection page. Let's try it without our param.
+            if ( $static_page->http_status_code === 404 ) {
+                $success = Url_Fetcher::instance()->fetch( $static_page, false );
+
+                if ( ! $success ) {
+                    continue;
+                }
+            }
+
 			// If we get a 30x redirect...
 			if ( in_array( $static_page->http_status_code, array( 301, 302, 303, 307, 308 ) ) ) {
 				$this->handle_30x_redirect( $static_page, $save_file, $follow_urls );
@@ -97,7 +107,7 @@ class Fetch_Urls_Task extends Task {
 
 			$this->handle_200_response( $static_page, $save_file, $follow_urls );
 
-			do_action( 'ss_after_setup_static_page', $static_page );
+			do_action( 'ss_after_setup_static_page', $static_page, $pages_remaining );
 
 		}
 
@@ -113,13 +123,13 @@ class Fetch_Urls_Task extends Task {
 	}
 
 
-
 	/**
 	 * Process the response for a 200 response (success)
 	 *
-	 * @param  Simply_Static\Page $static_page Record to update.
-	 * @param  boolean            $save_file   Save a static copy of the page.
-	 * @param  boolean            $follow_urls Save found URLs to database.
+	 * @param Simply_Static\Page $static_page Record to update.
+	 * @param boolean $save_file Save a static copy of the page.
+	 * @param boolean $follow_urls Save found URLs to database.
+	 *
 	 * @return void
 	 */
 	public function handle_200_response( $static_page, $save_file, $follow_urls ) {
@@ -127,7 +137,7 @@ class Fetch_Urls_Task extends Task {
 			Util::debug_log( "Extracting URLs and replacing URLs in the static file" );
 			// Fetch all URLs from the page and add them to the queue...
 			$extractor = new Url_Extractor( $static_page );
-			$urls = $extractor->extract_and_update_urls();
+			$urls      = $extractor->extract_and_update_urls();
 			// Save the REST media map from extractor
 			$rest_media_map = $extractor->rest_urls;
 		}
@@ -167,16 +177,19 @@ class Fetch_Urls_Task extends Task {
 
 	/**
 	 * Process the response to a 30x redirection
-	 * @param  Simply_Static\Page         $static_page Record to update
-	 * @param  boolean            $save_file   Save a static copy of the page?
-	 * @param  boolean            $follow_urls   Save redirect URL to database?
+	 *
+	 * @param Simply_Static\Page $static_page Record to update
+	 * @param boolean $save_file Save a static copy of the page?
+	 * @param boolean $follow_urls Save redirect URL to database?
+	 *
 	 * @return void
 	 */
 	public function handle_30x_redirect( $static_page, $save_file, $follow_urls ) {
-		$origin_url = Util::origin_url();
+		$origin_url      = Util::origin_url();
 		$destination_url = $this->options->get_destination_url();
-		$current_url = $static_page->url;
-		$redirect_url = $static_page->redirect_url;
+		$current_url     = $static_page->url;
+		$redirect_url    = remove_query_arg( 'simply_static_page', $static_page->redirect_url );
+
 
 		Util::debug_log( "redirect_url: " . $redirect_url );
 
@@ -186,16 +199,16 @@ class Fetch_Urls_Task extends Task {
 		if ( $redirect_url ) {
 			// WP likes to 301 redirect `/path` to `/path/` -- we want to
 			// check for this and just add the trailing slashed version
-			if ( $redirect_url === trailingslashit( $current_url ) || untrailingslashit($redirect_url) === untrailingslashit($current_url) ) {
+			if ( $redirect_url === trailingslashit( $current_url ) || untrailingslashit( $redirect_url ) === untrailingslashit( $current_url ) ) {
 				Util::debug_log( "This is a redirect to a trailing slashed version of the same page; adding new URL to the queue" );
 				$this->set_url_found_on( $static_page, $redirect_url );
 
-			// Don't create a redirect page if it's just a redirect from
-			// http to https. Instead just add the new url to the queue.
-			// TODO: Make this less horrible.
+				// Don't create a redirect page if it's just a redirect from
+				// http to https. Instead just add the new url to the queue.
+				// TODO: Make this less horrible.
 			} else if (
-			Util::strip_index_filenames_from_url( Util::remove_params_and_fragment( Util::strip_protocol_from_url( $redirect_url ) ) ) ===
-			Util::strip_index_filenames_from_url( Util::remove_params_and_fragment( Util::strip_protocol_from_url( $current_url ) ) ) ) {
+				Util::strip_index_filenames_from_url( Util::remove_params_and_fragment( Util::strip_protocol_from_url( $redirect_url ) ) ) ===
+				Util::strip_index_filenames_from_url( Util::remove_params_and_fragment( Util::strip_protocol_from_url( $current_url ) ) ) ) {
 
 				Util::debug_log( "This looks like a redirect from http to https (or visa versa); adding new URL to the queue" );
 				$this->set_url_found_on( $static_page, $redirect_url );
@@ -222,8 +235,8 @@ class Fetch_Urls_Task extends Task {
 					$view = new View();
 
 					$content = $view->set_template( 'redirect' )
-						->assign( 'redirect_url', $redirect_url )
-						->render_to_string();
+					                ->assign( 'redirect_url', $redirect_url )
+					                ->render_to_string();
 
 					$filename = $this->save_static_page_content_to_file( $static_page, $content );
 					if ( $filename ) {
@@ -249,9 +262,10 @@ class Fetch_Urls_Task extends Task {
 	}
 
 	/**
-	 * Find executeable.
+	 * Find excludable.
 	 *
 	 * @param object $static_page current page.
+	 *
 	 * @return bool
 	 */
 	public function find_excludable( $static_page ) {
@@ -261,12 +275,13 @@ class Fetch_Urls_Task extends Task {
 		foreach ( $this->options->get( 'urls_to_exclude' ) as $excludable ) {
 			// using | as the delimiter for regex instead of the traditional /
 			// because | won't show up in a path (it would have to be url-encoded)
-			$regex = '|' . $excludable['url'] .  '|';
+			$regex  = '|' . $excludable['url'] . '|';
 			$result = preg_match( $regex, $url );
 			if ( $result === 1 ) {
 				return $excludable;
 			}
 		}
+
 		return false;
 	}
 
@@ -277,15 +292,17 @@ class Fetch_Urls_Task extends Task {
 	 * for which page it was found on if the ID isn't yet set or if the record
 	 * hasn't been updated in this instance of static generation yet.
 	 *
-	 * @param Simply_Static\Page $static_page     The record for the parent page.
-	 * @param string             $child_url       The URL of the child page.
-	 * @param string             $rest_identifier The generated REST media identifier for this URL (optional).
+	 * @param \Simply_Static\Page $static_page The record for the parent page.
+	 * @param string $child_url The URL of the child page.
+	 * @param string $start_time Static generation start time.
+	 *
 	 * @return void
 	 */
 	public function set_url_found_on( $static_page, $child_url, $rest_identifier = null ) {
-		$child_static_page = Page::query()->find_or_create_by( 'url' , $child_url );
+		$child_static_page = Page::query()->find_or_create_by( 'url', $child_url );
 		if ( $child_static_page->found_on_id === null || $child_static_page->updated_at < $this->archive_start_time ) {
 			$child_static_page->found_on_id = $static_page->id;
+			$child_static_page->handler     = apply_filters( 'simply_static_handler_class_on_url_found', $static_page->get_handler_class(), $child_url, $static_page );
 
 			// Pre-populate the file path, if this is REST media
 			// NOTE: The file extension will need to be determined later, after fetch
@@ -301,7 +318,8 @@ class Fetch_Urls_Task extends Task {
 	 * Save the contents of a page to a file in our archive directory
 	 *
 	 * @param Simply_Static\Page $static_page The Simply_Static\Page record.
-	 * @param string             $content The content of the page we want to save.
+	 * @param string $content The content of the page we want to save.
+	 *
 	 * @return string|null                The file path of the saved file.
 	 */
 	public function save_static_page_content_to_file( $static_page, $content ) {

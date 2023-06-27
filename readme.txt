@@ -2,9 +2,9 @@
 Contributors: patrickposner
 Tags: HTML, static website generator, static site, secure, fast
 Requires at least: 5.4
-Tested up to: 6.1
+Tested up to: 6.2
 Requires PHP: 7.4
-Stable tag: 2.1.9
+Stable tag: 2.3.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -46,6 +46,27 @@ Develop your site locally and only push the static exported website on a server.
 * [lando](https://docs.lando.dev/)
 
 I highly recommend not to use another tool for local development if you are not a programmer as in most cases manual package installation is required.
+
+== Simply CDN ==
+
+Simply CDN is a hosting platform for static sites generated with Simply Static.
+
+Create an account, copy & paste the Security Token into Simply Static, and immediately push your static website live.
+
+[youtube https://youtu.be/7ejlvDxXMXM]
+
+Simply CDN also ships with a bunch of features to simplify the process of working with your static website:
+
+* handles caching and security
+* temporary domains for setup and testing
+* forward form submissions to your e-mail address
+* handles 404 pages with a custom template
+* automatically export changes in the background
+
+It's built on BunnyCDN and combines affordable static site hosting with everything learned while developing Simply Static.
+
+Start your 7-day free trial [here](https://simplycdn.io/#pricing).
+
 
 == Simply Static Pro ==
 
@@ -110,13 +131,13 @@ Simply Static Pro also supports configuring settings per language, using the ava
 
 = Get the Pro version =
 
-You can get the pro version [here](https://patrickposner.dev/plugins/simply-static/).
+You can get the pro version [here](https://simplystatic.com/simply-static-pro/).
 
 = Tutorials =
 
 I publish new tutorials on how to work with Simply Static and other tools on my blog.
 
-You can check the current tutorials [here](https://patrickposner.dev/tutorials/tag/simply-static/)
+You can check the current tutorials [here](https://simplystatic.com/tutorials/)
 
 
 == Installation ==
@@ -178,6 +199,104 @@ Simply Static creates a static copy of your WordPress site that is intended to b
 3. Diagnostics
 
 == Changelog ==
+
+= 2.3.2 =
+
+* bugfix: Elementor asset loading via webpack
+* repositioned filter for HTTPS args to be able to modify all arguments
+* latest version of WP Background processing added
+
+= 2.3.1 =
+
+* improved Elementor asset handling (free and pro version)
+* new filter to modify excludes
+
+= 2.3.0 =
+
+* fix for Yoast sitemap inclusion
+* better approach to extract URLs from HTML
+* added support for WP-CLI integration
+* better task handling with ajax and WP-Cron with progress without reload
+* better quote handling in JSON
+* improved SimplyCDN integration and security token handling
+* fix for redirect pages by removing query args before saving
+* fix for Elementor Pro for data attributes
+
+= 2.2.9 =
+
+* constants for Simply CDN implemented
+* remaining pages as argument in fetch URLs task
+* fixed log updates if running with WP-Cron
+* match_tags improvements for lazyload
+* fixed inline CSS extraction to avoid trailingslash for hexcodes
+
+= 2.2.8 =
+
+* SimplyCDN form improvement for Elementor forms
+* reset settings now in Advanced tab
+* removed unused settings for MU integration
+* added <span> tags to match_tags list
+* improved XML Sitemap handling with Yoast SEO
+* lowered min cURL version in diagnostics
+
+= 2.2.7 =
+
+* SimplyCDN integration
+* added hooks for multisite integration
+* Elementor Pro support (Lottie files and videos)
+* fixed log time with correct timezone
+* removed WP-Cron option, now handled automatically
+
+= 2.2.6 =
+
+* fixed typo in CookieYes integration class
+
+= 2.2.5 =
+
+* integration for CookieYes GPDR plugin
+* integration for Brizy Builder (image extraction)
+* fixed 301 redirections with Redirection plugin
+* fallback solution for existing pages not being crawled due to URL parameter
+
+= 2.2.4 =
+
+* reverted blackslash extraction producing invalid markup in CSS + JS
+* remember configuration for destination (while switching options)
+* unique nonce for Simply Static Ajax request to fix conflict with MiniOrange SSL On plugin
+* removed simply_static_page query parameters from URL on static site
+* automatically remove quotation marks on save additional URL/File
+
+= 2.2.3 =
+
+* min PHP version increased to 7.4
+* ability to include files without filetype (_header)
+* Elementor support for bundled JS files
+* improved URL extraction in JS and HTML files
+
+= 2.2.2 =
+
+* XML Sitemap auto-include for Yoast
+* XML Sitemap auto-include for RankMath
+* XML Sitemap auto-include for AllInOneSEO
+* XML Sitemap auto-include for SEOPress
+
+= 2.2.1.1 =
+
+* improved path conversion for Windows
+* more fail-safe check for deleting local directory before export
+* WPCS code style updates
+
+= 2.2.1 =
+
+* fixed path resolution on local path exports
+
+= 2.2 =
+
+* improved URL replacement in script tags
+* fixed clear directory before export when using local path exports
+* added action fired after ZIP file created
+* fixed path replacement for Windows filesystems in Additional Files and Directories
+* untrailingslash path on transfer files locally
 
 = 2.1.9 =
 

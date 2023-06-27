@@ -29,7 +29,7 @@ class Url_Extractor {
 	protected static $match_tags = array(
 		'a'       => array( 'href', 'urn', 'style' ),
 		'base'    => array( 'href' ),
-		'img'     => array( 'src', 'usemap', 'longdesc', 'dynsrc', 'lowsrc', 'srcset' ),
+		'img'     => array( 'src', 'usemap', 'longdesc', 'dynsrc', 'lowsrc', 'srcset', 'data-src', 'data-bg' ),
 		'picture' => array( 'src', 'srcset' ),
 		'source'  => array( 'srcset' ),
 		'amp-img' => array( 'src', 'srcset' ),
@@ -60,6 +60,7 @@ class Url_Extractor {
 
 		'bgsound' => array( 'src' ),
 		'div'     => array( 'href', 'src', 'style' ),
+		'span'    => array( 'href', 'src', 'style' ),
 		'section' => array( 'style' ),
 		'footer'  => array( 'style' ),
 		'header'  => array( 'style' ),
@@ -96,7 +97,7 @@ class Url_Extractor {
 
 	/**
 	 * The static page to extract URLs from
-	 * @var Simply_Static\Page
+	 * @var \Simply_Static\Page
 	 */
 	protected $static_page;
 
@@ -156,6 +157,15 @@ class Url_Extractor {
 	 */
 	public function save_body( $content ) {
 		return file_put_contents( $this->options->get_archive_dir() . $this->static_page->file_path, $content );
+	}
+
+	/**
+	 * Get the Static Page.
+	 *
+	 * @return \Simply_Static\Page|string
+	 */
+	public function get_static_page() {
+		return $this->static_page;
 	}
 
 	/**
@@ -299,7 +309,13 @@ class Url_Extractor {
 					}
 				}
 
+				$strict_url_validation = apply_filters( 'simply_static_strict_url_validation', false );
+
 				foreach ( $extracted_urls as $extracted_url ) {
+					if ( $strict_url_validation && ! filter_var( $extracted_url, FILTER_VALIDATE_URL ) ) {
+						continue;
+					}
+
 					if ( $extracted_url !== '' ) {
 						$updated_extracted_url = $this->add_to_extracted_urls( $extracted_url );
 						$attribute_value       = str_replace( $extracted_url, $updated_extracted_url, $attribute_value );
@@ -339,30 +355,39 @@ class Url_Extractor {
 			}
 
 			// handle 'style' tag differently, since we need to parse the content.
-			$tags = $dom->find( 'style' );
+			$parse_inline_style = apply_filters( 'ss_parse_inline_style', true );
 
-			foreach ( $tags as $tag ) {
-				// Check if valid content exists.
-				try {
-					$updated_css        = $this->extract_and_replace_urls_in_css( $tag->innerhtmlKeep );
-					$tag->innerhtmlKeep = $updated_css;
-				} catch ( Exception $e ) {
-					// If not skip the result.
-					continue;
+			if ( $parse_inline_style ) {
+				$style_tags = $dom->find( 'style' );
+
+				foreach ( $style_tags as $tag ) {
+					// Check if valid content exists.
+					try {
+						$updated_css        = $this->extract_and_replace_urls_in_css( $tag->innerhtmlKeep );
+						$tag->innerhtmlKeep = $updated_css;
+					} catch ( Exception $e ) {
+						// If not skip the result.
+						continue;
+					}
 				}
 			}
 
 			// handle 'script' tag differently, since we need to parse the content.
-			$tags = $dom->find( 'script' );
+			$parse_inline_script = apply_filters( 'ss_parse_inline_script', true );
 
-			foreach ( $tags as $tag ) {
-				// Check if valid content exists.
-				try {
-					$updated_script     = $this->extract_and_replace_urls_in_script( $tag->innerhtmlKeep );
-					$tag->innerhtmlKeep = $updated_script;
-				} catch ( Exception $e ) {
-					// If not skip the result.
-					continue;
+			if ( $parse_inline_script ) {
+				$script_tags = $dom->find( 'script' );
+
+				foreach ( $script_tags as $tag ) {
+					// Check if valid content exists.
+					try {
+						$updated_script     = $this->extract_and_replace_urls_in_script( $tag->innerhtmlKeep );
+						$tag->innerhtmlKeep = $updated_script;
+						$this->extract_and_replace_urls_in_script_inner_text( $tag );
+					} catch ( Exception $e ) {
+						// If not skip the result.
+						continue;
+					}
 				}
 			}
 
@@ -425,10 +450,75 @@ class Url_Extractor {
 	}
 
 	private function extract_and_replace_urls_in_script( $text ) {
-
-		$text = preg_replace( '/(https?:)?\/\/' . addcslashes( Util::origin_host(), '/' ) . '/i', $this->options->get_destination_url(), html_entity_decode( $text ) );
+		if ( $this->is_json( $text ) ) {
+			$decoded_text = html_entity_decode( $text, ENT_NOQUOTES );
+		} else {
+			$decoded_text = html_entity_decode( $text );
+		}
+		$text = preg_replace( '/(https?:)?\/\/' . addcslashes( Util::origin_host(), '/' ) . '/i', $this->options->get_destination_url(), $decoded_text );
 
 		return $text;
+	}
+
+	/**
+	 * @param \ $tag
+	 *
+	 * @return array|string|string[]|null
+	 */
+	private function extract_and_replace_urls_in_script_inner_text( $tag ) {
+
+		$regex = '/(https?:)?\/\/' . addcslashes( Util::origin_host(), '/' ) . '/i';
+
+		switch ( $this->options->get( 'destination_url_type' ) ) {
+			case 'absolute':
+				$convert_to = $this->options->get_destination_url();
+				break;
+			case 'relative':
+				// Adding \/? before end of regex pattern to convert url.com/ & url.com to relative path, ex. /path/.
+				$regex      = '/(https?:)?\/\/' . addcslashes( Util::origin_host(), '/' ) . '\/?/i';
+				$convert_to = $this->options->get( 'relative_path' );
+				break;
+			default:
+				// Offline mode.
+				// Adding \/? before end of regex pattern to convert url.com/ & url.com to relative path, ex. /path/.
+				$regex      = '/(https?:)?\/\/' . addcslashes( Util::origin_host(), '/' ) . '\/?/i';
+				$convert_to = '/';
+		}
+
+		if ( $this->is_json( $tag->innerText ) ) {
+			$decoded_text = html_entity_decode( $tag->innerText, ENT_NOQUOTES );
+		} else {
+			$decoded_text = html_entity_decode( $tag->innerText );
+		}
+
+		$tag->innerText = preg_replace( $regex, $convert_to, $decoded_text );
+
+		return $tag;
+	}
+
+	/**
+	 * Check whether a given string is a valid JSON representation.
+	 *
+	 * Copied from: WP CLI, https://github.com/wp-cli/wp-cli/blob/f3e4b0785aa3d3132ee73be30aedca8838a8fa06/php/utils.php#L1600-L1612
+	 *
+	 * @param string $argument String to evaluate.
+	 * @param bool $ignore_scalars Optional. Whether to ignore scalar values.
+	 *                               Defaults to true.
+	 *
+	 * @return bool Whether the provided string is a valid JSON representation.
+	 */
+	protected function is_json( $argument, $ignore_scalars = true ) {
+		if ( ! is_string( $argument ) || '' === $argument ) {
+			return false;
+		}
+		$arg = $argument[0];
+		if ( $ignore_scalars && ! in_array( $argument[0], [ '{', '[' ], true ) ) {
+			return false;
+		}
+
+		json_decode( $argument, $assoc = true );
+
+		return json_last_error() === JSON_ERROR_NONE;
 	}
 
 	/**
@@ -441,7 +531,7 @@ class Url_Extractor {
 	 *
 	 * @return string An updated string for the text that was originally matched
 	 */
-	private function css_matches( $matches ) {
+	public function css_matches( $matches ) {
 		$full_match    = $matches[0];
 		$extracted_url = $matches[1];
 
@@ -506,9 +596,6 @@ class Url_Extractor {
 		$url = Util::relative_to_absolute_url( $extracted_url, $this->static_page->url );
 
 		if ( $url && Util::is_local_url( $url ) ) {
-			// add to extracted urls queue
-			//$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
-
 			// Identify and handle REST media (dynamic assets based on query parameters)
 			// TODO: Need a better way to recognize if this is a REST url or not
 			if ( preg_match('/\?brizy_media=/', $url) ) {
@@ -529,7 +616,7 @@ class Url_Extractor {
 
 				$rest_media_identifier = $this->rest_urls[$url];
 				if (empty($rest_media_identifier)) {
-					$rest_media_identifier = Util::get_random_string(10) . "-$original_file";
+					$rest_media_identifier = Util::random_string(10) . "-$original_file";
 					$this->rest_urls[$url] = $rest_media_identifier;
 				}
 
@@ -541,7 +628,12 @@ class Url_Extractor {
 				$url = Util::remove_params_and_fragment( $url ) . "rest_media/$rest_media_identifier";
 			}
 			else {
-				$this->extracted_urls[] = Util::remove_params_and_fragment( $url );
+				$this->extracted_urls[] = apply_filters(
+					'simply_static_extracted_url',
+					Util::remove_params_and_fragment( $url ),
+					$url,
+					$this->static_page
+				);
 			}
 			
 			$url = $this->convert_url( $url );
@@ -558,6 +650,9 @@ class Url_Extractor {
 	 * @return string      Converted URL
 	 */
 	private function convert_url( $url ) {
+
+		$url = apply_filters( 'simply_static_pre_converted_url', $url, $this->static_page, $this );
+
 		if ( $this->options->get( 'destination_url_type' ) == 'absolute' ) {
 			$url = $this->convert_absolute_url( $url );
 		} else if ( $this->options->get( 'destination_url_type' ) == 'relative' ) {
@@ -566,7 +661,9 @@ class Url_Extractor {
 			$url = $this->convert_offline_url( $url );
 		}
 
-		return $url;
+		$url = remove_query_arg( 'simply_static_page', $url );
+
+		return apply_filters( 'simply_static_converted_url', $url, $this->static_page, $this );
 	}
 
 	/**

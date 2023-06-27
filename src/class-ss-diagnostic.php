@@ -16,8 +16,8 @@ class Diagnostic {
 
 	/** @const */
 	protected static $min_version = array(
-		'php' => '7.2.5',
-		'curl' => '7.15.0'
+		'php' => '7.4',
+		'curl' => '7.68.0'
 	);
 
 	/**
@@ -145,7 +145,7 @@ class Diagnostic {
 		if ( stripos( $file, get_home_path() ) !== 0 && stripos( $file, WP_PLUGIN_DIR ) !== 0 && stripos( $file, WP_CONTENT_DIR ) !== 0 ) {
 			$test = false;
 			$message = __( 'Not a valid path', 'simply-static' );
-		} else if ( ! is_readable( $file ) ) {
+		} elseif ( ! is_readable( $file ) ) {
 			$test = false;
 			$message = __( 'Not readable', 'simply-static' );;
 		} else {
